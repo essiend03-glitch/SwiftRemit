@@ -202,3 +202,17 @@ pub struct TransferRecord {
     pub timestamp: u64,
     pub amount: i128,
 }
+
+/// Paginated result for `get_remittances_by_sender`.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct RemittancePage {
+    /// Remittance IDs for this page
+    pub ids: Vec<u64>,
+    /// Total number of remittances for this sender
+    pub total_records: u32,
+    /// Current page number (1-indexed)
+    pub page: u32,
+    /// Total number of pages
+    pub total_pages: u32,
+}
