@@ -4,7 +4,7 @@
 //! including remittance records and status enums.
 
 
-use soroban_sdk::{contracttype, Address, String, Vec};
+use soroban_sdk::{contracttype, Address, Bytes, BytesN, String, Vec};
 
 /// Role types for authorization
 #[contracttype]
@@ -135,7 +135,8 @@ pub struct Escrow {
 /// A remittance transaction record.
 ///
 /// Contains all information about a cross-border remittance including
-/// parties involved, amounts, fees, status, and optional expiry.
+/// parties involved, amounts, fees, status, optional expiry, and optional
+/// proof validation configuration for oracle-confirmed settlement flows.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Remittance {
@@ -153,6 +154,35 @@ pub struct Remittance {
     pub status: RemittanceStatus,
     /// Optional expiry timestamp (seconds since epoch) for settlement
     pub expiry: Option<u64>,
+    /// Optional proof validation config for oracle-confirmed settlement flows.
+    /// When None, the standard agent authorization flow is used.
+    pub settlement_config: Option<SettlementConfig>,
+}
+
+/// Configuration for oracle-confirmed settlement flows.
+///
+/// When `require_proof` is true, `confirm_payout` will reject calls that do
+/// not supply a valid `ProofData` signed by `oracle_address`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SettlementConfig {
+    /// Whether cryptographic proof is required before settlement executes
+    pub require_proof: bool,
+    /// The oracle/signer address whose signature must be verified.
+    /// Must be `Some` when `require_proof` is true.
+    pub oracle_address: Option<Address>,
+}
+
+/// Cryptographic proof supplied to `confirm_payout` for oracle-confirmed flows.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProofData {
+    /// Ed25519 signature over `payload` produced by the oracle
+    pub signature: soroban_sdk::BytesN<64>,
+    /// The signed payload (e.g. serialised settlement attestation)
+    pub payload: soroban_sdk::Bytes,
+    /// The signer address — must match `SettlementConfig::oracle_address`
+    pub signer: Address,
 }
 
 /// Entry for batch settlement processing.

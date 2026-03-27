@@ -296,6 +296,7 @@ mod tests {
             fee: 2,
             status: RemittanceStatus::Pending,
             expiry: None,
+            settlement_config: None,
         };
 
         let result = transition_status(&env, &mut remittance, RemittanceStatus::Completed);
@@ -317,6 +318,7 @@ mod tests {
             fee: 2,
             status: RemittanceStatus::Completed,
             expiry: None,
+            settlement_config: None,
         };
 
         let result = transition_status(&env, &mut remittance, RemittanceStatus::Pending);
@@ -339,6 +341,7 @@ mod tests {
             fee: 2,
             status: RemittanceStatus::Pending,
             expiry: None,
+            settlement_config: None,
         };
 
         let result = transition_status(&env, &mut remittance, RemittanceStatus::Pending);

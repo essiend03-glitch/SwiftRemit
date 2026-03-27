@@ -201,6 +201,22 @@ pub enum ContractError {
     /// Cause: Integrity checks failed on stored data.
     DataCorruption = 42,
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Proof Validation Errors (50-52)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /// Cryptographic proof is invalid.
+    /// Cause: Signature verification failed or signer does not match oracle address.
+    InvalidProof = 50,
+
+    /// Proof is required but was not supplied.
+    /// Cause: confirm_payout called without ProofData on a proof-required remittance.
+    MissingProof = 51,
+
+    /// Oracle address is invalid or missing.
+    /// Cause: SettlementConfig has require_proof=true but oracle_address is None.
+    InvalidOracleAddress = 52,
+
     /// Index out of bounds.
     /// Cause: Accessing collection with invalid index.
     IndexOutOfBounds = 43,

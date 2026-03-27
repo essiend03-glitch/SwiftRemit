@@ -233,6 +233,7 @@ impl TransactionController {
             fee,
             status: RemittanceStatus::Pending,
             expiry,
+            settlement_config: None,
         };
 
         crate::storage::set_remittance(env, remittance_id, &remittance);

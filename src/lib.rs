@@ -21,6 +21,7 @@ mod transaction_controller;
 mod transitions;
 mod types;
 mod validation;
+mod verification;
 #[cfg(all(test, feature = "legacy-tests"))]
 mod test;
 #[cfg(test)]
@@ -59,6 +60,7 @@ pub use transaction_controller::*;
 pub use transitions::*;
 pub use types::*;
 pub use validation::*;
+pub use verification::*;
 
 /// Maximum number of remittances that can be settled in a single batch
 const MAX_BATCH_SIZE: u32 = 100;
@@ -276,17 +278,20 @@ impl SwiftRemitContract {
     ///
     /// # Arguments
     ///
-    /// * `env` - The contract execution environment
-    /// * `sender` - Address initiating the remittance
-    /// * `agent` - Address of the registered agent who will receive the payout
-    /// * `amount` - Amount to remit in USDC (must be positive)
-    /// * `expiry` - Optional expiry timestamp (seconds since epoch) after which settlement fails
+    /// * `env`               - The contract execution environment
+    /// * `sender`            - Address initiating the remittance
+    /// * `agent`             - Address of the registered agent who will receive the payout
+    /// * `amount`            - Amount to remit in USDC (must be positive)
+    /// * `expiry`            - Optional expiry timestamp (seconds since epoch)
+    /// * `settlement_config` - Optional proof validation config for oracle-confirmed flows.
+    ///                         When `require_proof` is true, `oracle_address` must be `Some`.
     ///
     /// # Returns
     ///
     /// * `Ok(remittance_id)` - Unique ID of the created remittance
     /// * `Err(ContractError::InvalidAmount)` - Amount is zero or negative
     /// * `Err(ContractError::AgentNotRegistered)` - Specified agent is not registered
+    /// * `Err(ContractError::InvalidOracleAddress)` - require_proof=true but oracle_address is None
     /// * `Err(ContractError::Overflow)` - Arithmetic overflow in fee calculation
     /// * `Err(ContractError::NotInitialized)` - Contract not initialized
     ///
@@ -299,8 +304,16 @@ impl SwiftRemitContract {
     agent: Address,
     amount: i128,
     expiry: Option<u64>,
+    settlement_config: Option<SettlementConfig>,
 ) -> Result<u64, ContractError> {
     validate_create_remittance_request(&env, &sender, &agent, amount)?;
+
+    // Validate settlement config: require_proof=true demands an oracle address
+    if let Some(ref config) = settlement_config {
+        if config.require_proof && config.oracle_address.is_none() {
+            return Err(ContractError::InvalidOracleAddress);
+        }
+    }
 
     sender.require_auth();
 
@@ -322,6 +335,7 @@ impl SwiftRemitContract {
         fee,
         status: RemittanceStatus::Pending,
         expiry,
+        settlement_config,
     };
 
     set_remittance(&env, remittance_id, &remittance);
@@ -338,10 +352,14 @@ impl SwiftRemitContract {
     /// the remittance as completed. Includes duplicate settlement protection and
     /// expiry validation.
     ///
+    /// When the remittance was created with `SettlementConfig::require_proof = true`,
+    /// a valid `ProofData` signed by the configured oracle address must be supplied.
+    ///
     /// # Arguments
     ///
-    /// * `env` - The contract execution environment
+    /// * `env`           - The contract execution environment
     /// * `remittance_id` - ID of the remittance to confirm
+    /// * `proof`         - Optional cryptographic proof for oracle-confirmed flows
     ///
     /// # Returns
     ///
@@ -350,14 +368,16 @@ impl SwiftRemitContract {
     /// * `Err(ContractError::InvalidStatus)` - Remittance is not in Pending status
     /// * `Err(ContractError::DuplicateSettlement)` - Settlement already executed
     /// * `Err(ContractError::SettlementExpired)` - Current time exceeds expiry timestamp
-    /// * `Err(ContractError::InvalidAddress)` - Agent address validation failed
+    /// * `Err(ContractError::MissingProof)` - Proof required but not supplied
+    /// * `Err(ContractError::InvalidProof)` - Supplied proof failed verification
+    /// * `Err(ContractError::InvalidOracleAddress)` - Proof signer ≠ oracle address
     /// * `Err(ContractError::Overflow)` - Arithmetic overflow in payout calculation
     ///
     /// # Authorization
     ///
     /// Requires authentication from the agent address assigned to the remittance.
     /// Requires Settler role.
-    pub fn confirm_payout(env: Env, remittance_id: u64) -> Result<(), ContractError> {
+    pub fn confirm_payout(env: Env, remittance_id: u64, proof: Option<ProofData>) -> Result<(), ContractError> {
         // Centralized validation before business logic (returns remittance to avoid re-read)
         let mut remittance = validate_confirm_payout_request(&env, remittance_id)?;
 
@@ -365,6 +385,24 @@ impl SwiftRemitContract {
         
         // Require Settler role
         require_role_settler(&env, &remittance.agent)?;
+
+        // ── Proof validation ─────────────────────────────────────────────────
+        if let Some(ref config) = remittance.settlement_config {
+            if config.require_proof {
+                let oracle = config
+                    .oracle_address
+                    .as_ref()
+                    .ok_or(ContractError::InvalidOracleAddress)?;
+
+                let proof_data = proof.as_ref().ok_or(ContractError::MissingProof)?;
+
+                let valid = verify_proof(&env, proof_data, oracle)?;
+                if !valid {
+                    return Err(ContractError::InvalidProof);
+                }
+            }
+        }
+        // ── End proof validation ─────────────────────────────────────────────
         
         // Transition to Processing state
         set_transfer_state(&env, remittance_id, TransferState::Processing)?;
