@@ -327,6 +327,9 @@ impl SwiftRemitContract {
     set_remittance(&env, remittance_id, &remittance);
     set_remittance_counter(&env, remittance_id);
     
+    // Index this remittance under the sender for paginated queries
+    append_sender_remittance(&env, &sender, remittance_id);
+
     // Set initial transfer state
     set_transfer_state(&env, remittance_id, TransferState::Initiated)?;
 
@@ -1410,5 +1413,49 @@ impl SwiftRemitContract {
     /// Check if user KYC is approved
     pub fn is_kyc_approved(env: Env, user: Address) -> bool {
         is_kyc_approved(&env, &user) && !is_kyc_expired(&env, &user)
+    }
+
+    /// Returns a paginated list of remittance IDs for a given sender.
+    ///
+    /// # Arguments
+    ///
+    /// * `env` - The contract execution environment
+    /// * `sender` - The sender address to query
+    /// * `page` - 1-indexed page number
+    /// * `page_size` - Number of records per page (capped at 100)
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(RemittancePage)` - Paginated result with IDs and metadata
+    /// * `Err(ContractError::InvalidAmount)` - page or page_size is zero
+    pub fn get_remittances_by_sender(
+        env: Env,
+        sender: Address,
+        page: u32,
+        page_size: u32,
+    ) -> Result<RemittancePage, ContractError> {
+        if page == 0 || page_size == 0 {
+            return Err(ContractError::InvalidAmount);
+        }
+
+        // Cap page_size to prevent unbounded queries
+        let limit = page_size.min(100);
+        let offset = (page - 1).saturating_mul(limit);
+
+        let total_records = get_sender_remittance_count(&env, &sender);
+        let total_pages = if total_records == 0 {
+            1
+        } else {
+            (total_records + limit - 1) / limit
+        };
+
+        let ids = get_sender_remittances_page(&env, &sender, offset, limit);
+
+        Ok(RemittancePage {
+            ids,
+            total_records,
+            page,
+            total_pages,
+        })
     }
 }

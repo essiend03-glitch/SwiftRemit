@@ -150,6 +150,9 @@ enum DataKey {
     
     /// Fee corridor configuration indexed by (from_country, to_country)
     FeeCorridor(String, String),
+
+    /// List of remittance IDs created by a sender (persistent storage)
+    SenderRemittances(Address),
 }
 
 /// Checks if the contract has an admin configured.
@@ -1072,4 +1075,64 @@ pub fn remove_fee_corridor(env: &Env, from_country: &String, to_country: &String
     env.storage()
         .persistent()
         .remove(&key);
+}
+
+/// Appends a remittance ID to the sender's list of remittances.
+///
+/// Called on every `create_remittance` to maintain an index of remittances per sender.
+pub fn append_sender_remittance(env: &Env, sender: &Address, remittance_id: u64) {
+    let key = DataKey::SenderRemittances(sender.clone());
+    let mut ids: Vec<u64> = env
+        .storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or_else(|| Vec::new(env));
+    ids.push_back(remittance_id);
+    env.storage().persistent().set(&key, &ids);
+}
+
+/// Returns a slice of remittance IDs for a sender with offset/limit pagination.
+///
+/// # Arguments
+///
+/// * `env` - The contract execution environment
+/// * `sender` - The sender address to query
+/// * `offset` - Number of records to skip (0-indexed)
+/// * `limit` - Maximum number of records to return (capped at 100)
+///
+/// # Returns
+///
+/// A `Vec<u64>` of remittance IDs for the requested page.
+pub fn get_sender_remittances_page(
+    env: &Env,
+    sender: &Address,
+    offset: u32,
+    limit: u32,
+) -> Vec<u64> {
+    let key = DataKey::SenderRemittances(sender.clone());
+    let ids: Vec<u64> = env
+        .storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or_else(|| Vec::new(env));
+
+    let total = ids.len();
+    let start = offset.min(total);
+    let end = (start + limit).min(total);
+
+    let mut page = Vec::new(env);
+    for i in start..end {
+        page.push_back(ids.get(i).unwrap());
+    }
+    page
+}
+
+/// Returns the total number of remittances created by a sender.
+pub fn get_sender_remittance_count(env: &Env, sender: &Address) -> u32 {
+    let key = DataKey::SenderRemittances(sender.clone());
+    env.storage()
+        .persistent()
+        .get::<DataKey, Vec<u64>>(&key)
+        .map(|v| v.len())
+        .unwrap_or(0)
 }
