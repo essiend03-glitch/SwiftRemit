@@ -201,6 +201,10 @@ pub enum ContractError {
     /// Cause: Integrity checks failed on stored data.
     DataCorruption = 42,
 
+    /// Idempotency key exists but request payload differs.
+    /// Cause: Same idempotency key reused with different request parameters.
+    IdempotencyConflict = 49,
+
     /// Index out of bounds.
     /// Cause: Accessing collection with invalid index.
     IndexOutOfBounds = 43,

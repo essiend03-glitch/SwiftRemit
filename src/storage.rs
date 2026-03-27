@@ -150,6 +150,12 @@ enum DataKey {
     
     /// Fee corridor configuration indexed by (from_country, to_country)
     FeeCorridor(String, String),
+
+    /// Idempotency record indexed by client-provided key (persistent storage)
+    IdempotencyRecord(String),
+
+    /// Configurable TTL for idempotency records in seconds (instance storage)
+    IdempotencyTTL,
 }
 
 /// Checks if the contract has an admin configured.
@@ -1072,4 +1078,53 @@ pub fn remove_fee_corridor(env: &Env, from_country: &String, to_country: &String
     env.storage()
         .persistent()
         .remove(&key);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Idempotency Storage
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Default TTL for idempotency records: 24 hours in seconds.
+const DEFAULT_IDEMPOTENCY_TTL: u64 = 86_400;
+
+/// Retrieves an idempotency record by key.
+///
+/// Returns `None` if the record does not exist or has expired (lazy deletion).
+pub fn get_idempotency_record(env: &Env, key: &String) -> Option<crate::IdempotencyRecord> {
+    let storage_key = DataKey::IdempotencyRecord(key.clone());
+    let record: crate::IdempotencyRecord = env
+        .storage()
+        .persistent()
+        .get(&storage_key)?;
+
+    // Lazy expiration check — treat expired records as non-existent
+    let now = env.ledger().timestamp();
+    if now > record.expires_at {
+        return None;
+    }
+
+    Some(record)
+}
+
+/// Stores an idempotency record in persistent storage.
+pub fn set_idempotency_record(env: &Env, key: &String, record: &crate::IdempotencyRecord) {
+    let storage_key = DataKey::IdempotencyRecord(key.clone());
+    env.storage().persistent().set(&storage_key, record);
+}
+
+/// Returns the configured idempotency TTL in seconds.
+///
+/// Falls back to `DEFAULT_IDEMPOTENCY_TTL` (86400s = 24h) if not set.
+pub fn get_idempotency_ttl(env: &Env) -> u64 {
+    env.storage()
+        .instance()
+        .get(&DataKey::IdempotencyTTL)
+        .unwrap_or(DEFAULT_IDEMPOTENCY_TTL)
+}
+
+/// Sets the idempotency TTL in seconds (admin-only, enforced at call site).
+pub fn set_idempotency_ttl(env: &Env, ttl_seconds: u64) {
+    env.storage()
+        .instance()
+        .set(&DataKey::IdempotencyTTL, &ttl_seconds);
 }
