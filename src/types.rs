@@ -202,3 +202,17 @@ pub struct TransferRecord {
     pub timestamp: u64,
     pub amount: i128,
 }
+
+/// Stored record for idempotency protection on create_remittance.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IdempotencyRecord {
+    /// The client-provided idempotency key
+    pub key: String,
+    /// SHA-256 hash of the request payload (sender, agent, amount, expiry)
+    pub request_hash: soroban_sdk::BytesN<32>,
+    /// The remittance ID returned from the original successful request
+    pub remittance_id: u64,
+    /// Ledger timestamp after which this record is considered expired
+    pub expires_at: u64,
+}

@@ -118,6 +118,31 @@ fn address_to_bytes(env: &Env, address: &Address) -> Bytes {
     address.to_xdr(env)
 }
 
+/// Compute a deterministic SHA-256 hash from `create_remittance` request parameters.
+///
+/// Used for idempotency conflict detection — if the same idempotency key is
+/// submitted with different parameters, the hashes will differ.
+///
+/// # Field ordering (canonical)
+/// 1. sender  — Address, XDR-encoded
+/// 2. agent   — Address, XDR-encoded
+/// 3. amount  — i128, big-endian 16 bytes
+/// 4. expiry  — u64, big-endian 8 bytes (0 if None)
+pub fn compute_request_hash(
+    env: &Env,
+    sender: &Address,
+    agent: &Address,
+    amount: i128,
+    expiry: Option<u64>,
+) -> BytesN<32> {
+    let mut buf = Bytes::new(env);
+    buf.append(&address_to_bytes(env, sender));
+    buf.append(&address_to_bytes(env, agent));
+    buf.extend_from_array(&amount.to_be_bytes());
+    buf.extend_from_array(&expiry.unwrap_or(0).to_be_bytes());
+    env.crypto().sha256(&buf).into()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

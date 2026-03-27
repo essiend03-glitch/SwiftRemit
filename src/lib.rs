@@ -293,45 +293,84 @@ impl SwiftRemitContract {
     /// # Authorization
     ///
     /// Requires authentication from the sender address.
-   pub fn create_remittance(
-    env: Env,
-    sender: Address,
-    agent: Address,
-    amount: i128,
-    expiry: Option<u64>,
-) -> Result<u64, ContractError> {
-    validate_create_remittance_request(&env, &sender, &agent, amount)?;
+    pub fn create_remittance(
+        env: Env,
+        sender: Address,
+        agent: Address,
+        amount: i128,
+        expiry: Option<u64>,
+        idempotency_key: Option<String>,
+    ) -> Result<u64, ContractError> {
+        validate_create_remittance_request(&env, &sender, &agent, amount)?;
 
-    sender.require_auth();
+        sender.require_auth();
 
-    // Use centralized fee service for calculation
-    let fee = fee_service::calculate_platform_fee(&env, amount)?;
+        // ── Idempotency check ────────────────────────────────────────────────
+        if let Some(ref key) = idempotency_key {
+            // Validate key length: must be 1–255 characters
+            let key_len = key.len();
+            if key_len == 0 || key_len > 255 {
+                return Err(ContractError::InvalidAmount);
+            }
 
-    let usdc_token = get_usdc_token(&env)?;
-    let token_client = token::Client::new(&env, &usdc_token);
-    token_client.transfer(&sender, &env.current_contract_address(), &amount);
+            let request_hash = compute_request_hash(&env, &sender, &agent, amount, expiry);
 
-    let counter = get_remittance_counter(&env)?;
-    let remittance_id = counter.checked_add(1).ok_or(ContractError::Overflow)?;
+            if let Some(record) = get_idempotency_record(&env, key) {
+                if record.request_hash == request_hash {
+                    // Exact duplicate — return original remittance_id, no side effects
+                    return Ok(record.remittance_id);
+                } else {
+                    // Same key, different payload — conflict
+                    return Err(ContractError::IdempotencyConflict);
+                }
+            }
+            // No existing record (or expired) — fall through to execute
+        }
+        // ── End idempotency check ────────────────────────────────────────────
 
-    let remittance = Remittance {
-        id: remittance_id,
-        sender: sender.clone(),
-        agent: agent.clone(),
-        amount,
-        fee,
-        status: RemittanceStatus::Pending,
-        expiry,
-    };
+        // Use centralized fee service for calculation
+        let fee = fee_service::calculate_platform_fee(&env, amount)?;
 
-    set_remittance(&env, remittance_id, &remittance);
-    set_remittance_counter(&env, remittance_id);
-    
-    // Set initial transfer state
-    set_transfer_state(&env, remittance_id, TransferState::Initiated)?;
+        let usdc_token = get_usdc_token(&env)?;
+        let token_client = token::Client::new(&env, &usdc_token);
+        token_client.transfer(&sender, &env.current_contract_address(), &amount);
 
-    Ok(remittance_id)
-}
+        let counter = get_remittance_counter(&env)?;
+        let remittance_id = counter.checked_add(1).ok_or(ContractError::Overflow)?;
+
+        let remittance = Remittance {
+            id: remittance_id,
+            sender: sender.clone(),
+            agent: agent.clone(),
+            amount,
+            fee,
+            status: RemittanceStatus::Pending,
+            expiry,
+        };
+
+        set_remittance(&env, remittance_id, &remittance);
+        set_remittance_counter(&env, remittance_id);
+
+        // Set initial transfer state
+        set_transfer_state(&env, remittance_id, TransferState::Initiated)?;
+
+        // ── Store idempotency record on success ──────────────────────────────
+        if let Some(ref key) = idempotency_key {
+            let request_hash = compute_request_hash(&env, &sender, &agent, amount, expiry);
+            let ttl = get_idempotency_ttl(&env);
+            let expires_at = env.ledger().timestamp().saturating_add(ttl);
+            let record = IdempotencyRecord {
+                key: key.clone(),
+                request_hash,
+                remittance_id,
+                expires_at,
+            };
+            set_idempotency_record(&env, key, &record);
+        }
+        // ── End idempotency record storage ───────────────────────────────────
+
+        Ok(remittance_id)
+    }
     /// Confirms a remittance payout to the agent.
     ///
     /// Transfers the remittance amount (minus platform fee) to the agent and marks
@@ -1410,5 +1449,23 @@ impl SwiftRemitContract {
     /// Check if user KYC is approved
     pub fn is_kyc_approved(env: Env, user: Address) -> bool {
         is_kyc_approved(&env, &user) && !is_kyc_expired(&env, &user)
+    }
+
+    /// Sets the idempotency TTL for create_remittance records.
+    ///
+    /// # Arguments
+    ///
+    /// * `env` - The contract execution environment
+    /// * `caller` - Must be an admin
+    /// * `ttl_seconds` - New TTL in seconds (e.g. 86400 = 24h)
+    ///
+    /// # Authorization
+    ///
+    /// Requires admin role.
+    pub fn set_idempotency_ttl(env: Env, caller: Address, ttl_seconds: u64) -> Result<(), ContractError> {
+        caller.require_auth();
+        require_admin(&env, &caller)?;
+        set_idempotency_ttl(&env, ttl_seconds);
+        Ok(())
     }
 }
