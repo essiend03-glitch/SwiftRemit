@@ -241,6 +241,7 @@ mod tests {
             fee: 2,
             status: RemittanceStatus::Pending,
             expiry: None,
+            settlement_config: None,
         });
 
         // B -> A: 90
@@ -252,6 +253,7 @@ mod tests {
             fee: 1,
             status: RemittanceStatus::Pending,
             expiry: None,
+            settlement_config: None,
         });
 
         let net_transfers = compute_net_settlements(&env, &remittances);
@@ -287,6 +289,7 @@ mod tests {
             fee: 2,
             status: RemittanceStatus::Pending,
             expiry: None,
+            settlement_config: None,
         });
 
         // B -> A: 100
@@ -298,6 +301,7 @@ mod tests {
             fee: 2,
             status: RemittanceStatus::Pending,
             expiry: None,
+            settlement_config: None,
         });
 
         let net_transfers = compute_net_settlements(&env, &remittances);
@@ -324,6 +328,7 @@ mod tests {
             fee: 2,
             status: RemittanceStatus::Pending,
             expiry: None,
+            settlement_config: None,
         });
 
         // B -> C: 50
@@ -335,6 +340,7 @@ mod tests {
             fee: 1,
             status: RemittanceStatus::Pending,
             expiry: None,
+            settlement_config: None,
         });
 
         // C -> A: 30
@@ -346,6 +352,7 @@ mod tests {
             fee: 1,
             status: RemittanceStatus::Pending,
             expiry: None,
+            settlement_config: None,
         });
 
         let net_transfers = compute_net_settlements(&env, &remittances);
@@ -377,6 +384,7 @@ mod tests {
             fee: 2,
             status: RemittanceStatus::Pending,
             expiry: None,
+            settlement_config: None,
         });
 
         remittances.push_back(Remittance {
@@ -387,6 +395,7 @@ mod tests {
             fee: 1,
             status: RemittanceStatus::Pending,
             expiry: None,
+            settlement_config: None,
         });
 
         let net_transfers = compute_net_settlements(&env, &remittances);
@@ -410,6 +419,7 @@ mod tests {
             fee: 2,
             status: RemittanceStatus::Pending,
             expiry: None,
+            settlement_config: None,
         });
         remittances1.push_back(Remittance {
             id: 2,
@@ -419,6 +429,7 @@ mod tests {
             fee: 1,
             status: RemittanceStatus::Pending,
             expiry: None,
+            settlement_config: None,
         });
 
         // Second ordering (reversed)
@@ -431,6 +442,7 @@ mod tests {
             fee: 1,
             status: RemittanceStatus::Pending,
             expiry: None,
+            settlement_config: None,
         });
         remittances2.push_back(Remittance {
             id: 1,
@@ -440,6 +452,7 @@ mod tests {
             fee: 2,
             status: RemittanceStatus::Pending,
             expiry: None,
+            settlement_config: None,
         });
 
         let net1 = compute_net_settlements(&env, &remittances1);
